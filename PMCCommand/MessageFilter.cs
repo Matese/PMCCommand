@@ -1,11 +1,14 @@
-﻿namespace PMCCommand
+﻿// Copyright (c) 2017 Benjamin Trent. All rights reserved. See LICENSE file in project root
+
+namespace PMCCommand
 {
     using System;
     using System.Runtime.InteropServices;
 
     /// <summary>
-    /// Copied wholesale from: https://msdn.microsoft.com/en-us/library/ms228772.aspx
+    /// Copied wholesale from: https://msdn.microsoft.com/en-us/library/ms228772.aspx.
     /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("StyleCop.CSharp.DocumentationRules", "SA1600:Elements should be documented", Justification = "Copied wholesale from: https://msdn.microsoft.com/en-us/library/ms228772.aspx")]
     public class MessageFilter : IOleMessageFilter
     {
         private static bool Registered { get; set; }
@@ -13,24 +16,26 @@
         // Class containing the IOleMessageFilter
         // thread error-handling functions.
 
-        // Start the filter.
+        /// <summary>
+        /// Start the filter.
+        /// </summary>
         public static void Register()
         {
             if (!Registered)
             {
                 Console.WriteLine("Registering message filter");
                 IOleMessageFilter newFilter = new MessageFilter();
-                IOleMessageFilter oldFilter = null;
-                CoRegisterMessageFilter(newFilter, out oldFilter);
+                _ = CoRegisterMessageFilter(newFilter, out _);
                 Registered = true;
             }
         }
 
-        // Done with the filter, close it.
+        /// <summary>
+        /// Done with the filter, close it.
+        /// </summary>
         public static void Revoke()
         {
-            IOleMessageFilter oldFilter = null;
-            CoRegisterMessageFilter(null, out oldFilter);
+            _ = CoRegisterMessageFilter(null, out _);
             Registered = false;
         }
 

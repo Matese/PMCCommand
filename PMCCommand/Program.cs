@@ -1,31 +1,32 @@
-﻿// Copyright (c) Benjamin Trent. All rights reserved. See LICENSE file in project root
+﻿// Copyright (c) 2017 Benjamin Trent. All rights reserved. See LICENSE file in project root
 
 namespace PMCCommand
 {
     using System;
     using System.Globalization;
     using System.IO;
+    using CommandLine;
     using EnvDTE;
     using EnvDTE80;
 
     /// <summary>
     /// This is the least hacky way I could find for running commands in the PMC from the command line
     /// This program will open an instance of VisualStudio and execute the passed in commands into the PMC directly
-    /// From all that I could find, there was nothing that allowed this without passing through VisualStudio, which is depressing
+    /// From all that I could find, there was nothing that allowed this without passing through VisualStudio, which is depressing.
     /// </summary>
     public class Program
     {
         private const string CmdNameForPMC = "View.PackageManagerConsole";
+        private static readonly object StateMutex = new ();
         private static bool retry = true;
         private static ExecutionState state = ExecutionState.NOT_STARTED;
-        private static object stateMutex = new object();
 
         private enum ExecutionState
         {
             NOT_STARTED,
             VS_OPENED,
             PROJECT_OPENED,
-            NUGET_OPENED
+            NUGET_OPENED,
         }
 
         private static string VSVersion { get; set; }
@@ -56,14 +57,21 @@ namespace PMCCommand
         }
 
         /// <summary>
-        /// STAThread is necessary for the MessageFilter
+        /// STAThread is necessary for the MessageFilter.
         /// </summary>
-        /// <param name="args"> Command line args</param>
+        /// <param name="args"> Command line args.</param>
         [STAThread]
         private static void Main(string[] args)
         {
-            var options = new CmdLineOptions();
-            if (CommandLine.Parser.Default.ParseArgumentsStrict(args, options))
+            var writer = new StringWriter();
+            var parser = new Parser(conf => conf.HelpWriter = writer);
+            var result = parser.ParseArguments<CmdLineOptions>(args);
+
+            result.WithNotParsed(_ =>
+            {
+                Console.WriteLine(writer.ToString());
+                Environment.Exit(1);
+            }).WithParsed(options =>
             {
                 ProjectPath = options.ProjectPath;
                 NuGetCmd = options.NuGetCommand;
@@ -79,7 +87,7 @@ namespace PMCCommand
                     throw new Exception("project parameter cannot be empty.");
                 }
 
-                VSVersion = "15.0";
+                VSVersion = "17.0";
 
                 if (!string.IsNullOrWhiteSpace(options.VisualStudioVersion))
                 {
@@ -92,7 +100,7 @@ namespace PMCCommand
                 }
 
                 Execute();
-            }
+            });
         }
 
         /// <summary>
@@ -110,7 +118,7 @@ namespace PMCCommand
         {
             // This is the only way I could find for making sure that the PMC command completed
             LockFile = Path.GetTempFileName();
-            using (StreamWriter sw = new StreamWriter(LockFile))
+            using (StreamWriter sw = new (LockFile))
             {
                 sw.WriteLine(true);
             }
@@ -144,10 +152,8 @@ namespace PMCCommand
             while (stillRunning)
             {
                 System.Threading.Thread.Sleep(500);
-                using (StreamReader sr = new StreamReader(LockFile))
-                {
-                    stillRunning = Convert.ToBoolean(sr.ReadToEnd());
-                }
+                using StreamReader sr = new (LockFile);
+                stillRunning = Convert.ToBoolean(sr.ReadToEnd());
             }
 
             Console.WriteLine("Completed");
@@ -162,7 +168,7 @@ namespace PMCCommand
         /// We need to insure that particular parts of the main STAThread do not continue until feed back of other actions is received
         /// Since we could potentially get a failure from the MessageFilter and a retry.
         /// So, using a Monitor would not work as potentially the `Pulse` would occur before the `Wait`
-        /// Hence, the use of a naive state machine
+        /// Hence, the use of a naive state machine.
         /// </summary>
         /// <param name="expectedState">The state desired necessary to continue.</param>
         private static void SpinWait(ExecutionState expectedState)
@@ -176,7 +182,7 @@ namespace PMCCommand
         /// <summary>
         /// Failures can occure when accessing the newly created DTE2 instance.
         /// This is due to COM Interop errors in Windows.
-        /// The MessageFilter should catch failures, but if a particular one leaks through, restart this initial setting
+        /// The MessageFilter should catch failures, but if a particular one leaks through, restart this initial setting.
         /// </summary>
         private static void SetDelegatesForDTE()
         {
@@ -225,7 +231,7 @@ namespace PMCCommand
 
         private static void TransitionState(ExecutionState expectedOldState, ExecutionState newState)
         {
-            lock (stateMutex)
+            lock (StateMutex)
             {
                 if (state == expectedOldState)
                 {
@@ -233,17 +239,6 @@ namespace PMCCommand
                     PrintDebugLog(string.Format("Transitioned from {0} to {1}", expectedOldState, newState));
                 }
             }
-        }
-
-        private static string GetValue(string key, string defaultValue)
-        {
-            var result = Environment.GetEnvironmentVariable(key);
-            if (string.IsNullOrEmpty(result))
-            {
-                result = defaultValue;
-            }
-
-            return result;
         }
 
         private static DTE GetDTE2()
